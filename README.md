@@ -1,3 +1,10 @@
+> **macOS port.** This fork only makes [TINY 2.1](https://github.com/WollyMonjac/Tiny-2.1)
+> by [WollyMonjac](https://github.com/WollyMonjac) build and run on a Mac.
+> TINY, its network and all of the original code are their work, and
+> `TINY.C` is unchanged here: the port adds `build.sh` and the `mac/`
+> folder. See [README-MAC.md](README-MAC.md) to run it on a Mac.
+> The original README follows.
+
 # TINY 2.1 — a transformer for DOS
 
 ![TINY 2.1 running under DOS](tiny21.png)

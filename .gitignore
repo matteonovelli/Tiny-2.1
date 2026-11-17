@@ -1,0 +1,4 @@
+/tiny
+*.DMP
+SOUND.LOG
+.claude/
