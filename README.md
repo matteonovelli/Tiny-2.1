@@ -3,6 +3,8 @@
 > TINY, its network and all of the original code are their work, and
 > `TINY.C` is unchanged here: the port adds `build.sh` and the `mac/`
 > folder. See [README-MAC.md](README-MAC.md) to run it on a Mac.
+> It also runs in the browser: **[matteonovelli.github.io/Tiny-2.1](https://matteonovelli.github.io/Tiny-2.1/)**
+> (`index.html`, the same network in JavaScript).
 > The original README follows.
 
 # TINY 2.1 — a transformer for DOS

@@ -42,6 +42,18 @@ Everything in `README.TXT` applies: `./tiny 0`, `./tiny /demo`,
 - **Speed**: a Mac answers in a fraction of a second. TINY measures time in
   tenths of a second, so SPEED can show 0.0 for short answers.
 
+## In the browser
+
+`index.html` runs the same network in JavaScript, with the neon screen,
+the robot voice and a **letter x-ray**: point at any letter of an answer
+to see the other letters TINY weighed, and where it was guessing. It
+gives the same answers as the C program at creativity 0.
+
+Play it at [matteonovelli.github.io/Tiny-2.1](https://matteonovelli.github.io/Tiny-2.1/),
+or locally: `python3 -m http.server` in this folder, then open
+http://localhost:8000 (browsers block loading `TINY.BIN` from a file
+opened straight from disk).
+
 ## How the port works
 
 | File | Stands in for |

@@ -1,0 +1,1133 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TINY 2.1</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=VT323&display=swap">
+<style>
+/* Layout: one DOS-style text screen. Conversation on the left, neural monitor
+   and letter x-ray on the right, prompt and F-key bar below; one column on
+   phones. Colours are TINY's own neon VGA palette (TINY.C, neon_palette). */
+:root {
+  color-scheme: dark;
+  --void: #04041c;    /* VGA colour 0 */
+  --navy: #141c59;    /* 1 */
+  --speak: #006949;   /* 2: the word being spoken */
+  --teal: #005179;    /* 3: panel names, status bar */
+  --violet: #7118a2;  /* 5 */
+  --text: #a2b6db;    /* 7 */
+  --dim: #344171;     /* 8 */
+  --blue: #498aff;    /* 9 */
+  --mint: #49ffaa;    /* 10: answers */
+  --cyan: #28e7ff;    /* 11: frames */
+  --rose: #ff598a;    /* 12: guessing */
+  --pink: #ff49eb;    /* 13: you */
+  --amber: #ffdb38;   /* 14: questions */
+  --white: #f3fbff;   /* 15 */
+  --mono: "IBM Plex Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  --vga: "VT323", "IBM Plex Mono", Menlo, monospace;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+[hidden] { display: none !important; }
+body {
+  background: var(--void);
+  color: var(--text);
+  font: 15px/1.4 var(--mono);
+  padding-block: 20px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-font-smoothing: antialiased;
+}
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+button { font: inherit; }
+
+.screen {
+  position: relative;
+  max-width: 1100px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 310px);
+  grid-template-areas: "title title" "convo side" "ask ask" "fbar fbar";
+}
+
+/* title bar */
+.titlebar {
+  grid-area: title;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 16px;
+  background: var(--navy); color: var(--cyan);
+  padding: 4px 12px;
+}
+.titlebar b { color: var(--white); font-weight: 600; letter-spacing: .4em; }
+.tb-right { margin-left: auto; white-space: nowrap; }
+.tb-right b { letter-spacing: 0; margin-left: 8px; font-variant-numeric: tabular-nums; }
+.led { color: var(--mint); }
+
+/* framed panels, like TINY's double-line boxes */
+.panel {
+  --line: var(--cyan);
+  position: relative; min-width: 0;
+  border: 3px double var(--line);
+  padding: 20px 14px 12px;
+}
+.panel.quiet { --line: var(--teal); }
+.label {
+  position: absolute; top: -.8em; left: 12px; margin: 0;
+  font: inherit; font-weight: 400; letter-spacing: .04em;
+  background: var(--teal); color: var(--white);
+  padding: 0 8px; border-inline: 3px double var(--line);
+}
+
+/* conversation */
+.convo { grid-area: convo; display: flex; flex-direction: column; }
+.log {
+  flex: 1 1 auto; height: 0; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 1.1em;
+  padding-right: 6px; scrollbar-color: var(--teal) transparent;
+}
+.sys { color: var(--dim); }
+.line { display: grid; grid-template-columns: 6ch minmax(0, 1fr); column-gap: 1ch; }
+.who { text-align: right; white-space: pre; }
+.you .who { color: var(--pink); }
+.you .txt { color: var(--amber); overflow-wrap: break-word; }
+.tiny .who { color: var(--cyan); }
+.ans { color: var(--mint); white-space: pre-wrap; overflow-wrap: break-word; }
+.ans span { cursor: crosshair; }
+.ans span.flick { color: var(--cyan); }
+.ans span.glow { color: var(--white); text-shadow: 0 0 8px var(--white); }
+.ans span.guess { text-decoration: underline dotted var(--rose); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.ans span.speak { background: var(--speak); color: var(--white); }
+.ans span.sel { outline: 1px solid var(--amber); outline-offset: 1px; }
+.scan { color: var(--dim); white-space: pre; }
+.scan .h { color: var(--white); } .scan .n1 { color: var(--pink); } .scan .n2 { color: var(--violet); }
+.helpbox { display: grid; gap: 2px; }
+.helpbox .head { justify-self: start; background: var(--teal); color: var(--white); padding: 0 6px; margin-bottom: 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.chip {
+  color: var(--cyan); background: none; cursor: pointer;
+  border: 1px solid var(--teal); padding: 1px 8px;
+}
+.chip:hover { border-color: var(--cyan); color: var(--white); }
+
+/* right column */
+.side { grid-area: side; display: grid; gap: 16px; align-content: start; min-width: 0; }
+.mlabel { color: var(--dim); letter-spacing: .06em; font-size: .87em; margin-top: 10px; }
+.mlabel:first-of-type { margin-top: 0; }
+.lrow { display: grid; grid-template-columns: 2.5ch 1fr; gap: 1ch; align-items: center; color: var(--cyan); }
+.meter, .heat { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; height: .95em; }
+.meter i, .heat i {
+  display: block;
+  background: radial-gradient(circle, var(--dim) 0 1.5px, transparent 2px);
+}
+.meter i.f { background: var(--m); }
+.meter i.h { background: linear-gradient(90deg, var(--m) 50%, transparent 50%); }
+.heat i.f { background: var(--m); opacity: var(--o); }
+.crow { display: grid; grid-template-columns: 1fr 4.5ch; gap: 10px; align-items: center; }
+.big { font-family: var(--vga); font-size: 1.5em; line-height: 1; color: var(--white); text-align: right; font-variant-numeric: tabular-nums; }
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; margin-top: 10px; }
+.val { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.xr-ctx { color: var(--mint); white-space: pre; overflow: hidden; text-overflow: ellipsis; min-height: 1.4em; }
+.xr-ctx mark { background: var(--amber); color: var(--void); padding: 0 1px; }
+.xr-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 5px; }
+.xr-list li { display: grid; grid-template-columns: 1.5ch 3ch minmax(0, 1fr) 4.5ch; gap: 8px; align-items: center; }
+.xr-list .k { text-align: center; color: var(--white); background: var(--navy); }
+.xr-list .bar { height: .7em; background: var(--navy); }
+.xr-list .bar i { display: block; height: 100%; background: var(--dim); }
+.xr-list li.in .bar i { background: var(--mint); }
+.xr-list li.pick { color: var(--white); }
+.xr-list li.pick .mk { color: var(--amber); }
+.xr-list .p { text-align: right; font-variant-numeric: tabular-nums; }
+.xr-why { margin: 10px 0 0; color: var(--text); }
+.xr-note { margin: 4px 0 0; color: var(--dim); font-size: .87em; line-height: 1.45; }
+
+/* prompt */
+.ask { grid-area: ask; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding-block: 14px 10px; }
+.ask:focus-within { --line: var(--cyan); }
+.prompt { color: var(--pink); }
+#q { font: inherit; color: var(--white); background: transparent; border: 0; outline: none; caret-color: var(--white); padding: 4px 0; min-width: 0; }
+#q::placeholder { color: var(--dim); }
+.hint { color: var(--dim); white-space: nowrap; }
+
+/* F-key bar */
+.fbar { grid-area: fbar; display: flex; flex-wrap: wrap; align-items: center; background: var(--teal); }
+.fbar button { color: var(--text); background: none; border: 0; padding: 4px 9px; cursor: pointer; white-space: nowrap; }
+.fbar button:hover { background: var(--navy); }
+.fbar kbd { font: inherit; font-weight: 600; color: var(--white); }
+.fbar .on { color: var(--amber); }
+#status { margin-left: auto; padding: 4px 10px; color: var(--white); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.credit { max-width: 1100px; margin: 20px auto 0; color: var(--dim); font-size: .85em; line-height: 1.6; }
+.credit a { color: var(--cyan); }
+
+/* boot screen */
+.boot {
+  position: absolute; inset: 0; z-index: 5;
+  display: grid; place-items: center; overflow: hidden;
+  background: var(--void); cursor: pointer;
+}
+.boot canvas { position: absolute; inset: 0; width: 100%; height: 100%; transition: opacity .5s; }
+.boot canvas.gone { opacity: 0; }
+.boot-in { position: relative; display: grid; justify-items: center; gap: 8px; text-align: center; padding: 24px 0; }
+.logo { --cell: clamp(7px, 2.1vw, 16px); display: grid; grid-template-columns: repeat(25, var(--cell)); grid-auto-rows: var(--cell); margin-bottom: 10px; }
+.logo i { display: block; }
+.logo i.on { background: var(--c); }
+.logo i.sh { background: var(--navy); }
+.logo.go i.on { animation: settle .3s var(--d) both, sweep .3s var(--s); }
+.logo.go i.sh { animation: settle .3s var(--d) both; }
+@keyframes settle { 0% { opacity: 0; } 50% { opacity: 1; background: var(--dim); } }
+@keyframes sweep { 40% { background: var(--white); } }
+.bt-name { color: var(--white); letter-spacing: .5em; }
+.bt-ver { color: var(--dim); }
+.bt-rule { width: min(560px, 80vw); border-top: 1px solid var(--teal); margin: 6px 0; }
+.bt-load { color: var(--cyan); }
+.bt-bar { display: flex; align-items: center; gap: 10px; color: var(--white); }
+.bar36 { display: grid; grid-template-columns: repeat(36, 1fr); gap: 1px; width: min(360px, 62vw); height: .95em; border-inline: 3px solid var(--cyan); padding-inline: 2px; }
+.bar36 i { display: block; background: radial-gradient(circle, var(--dim) 0 1.5px, transparent 2px); }
+.bar36 i.a { background: var(--cyan); } .bar36 i.b { background: var(--mint); }
+.bt-lines { display: grid; gap: 2px; margin-top: 6px; }
+.bt-lines div { display: grid; grid-template-columns: auto minmax(2ch, 1fr) auto; gap: 1ch; width: min(36ch, 82vw); text-align: left; color: var(--text); }
+.bt-lines .p { color: var(--pink); }
+.bt-lines .fill { border-bottom: 2px dotted var(--dim); margin-bottom: .4em; }
+.bt-lines .ok { color: var(--mint); }
+.bt-ready { margin-top: 12px; color: var(--mint); animation: blink 1s steps(2, jump-none) infinite; }
+@keyframes blink { 50% { color: var(--white); } }
+.bt-go { margin-top: 10px; color: var(--dim); background: none; border: 0; cursor: pointer; }
+.bt-go:hover { color: var(--text); }
+.bt-err { color: var(--rose); max-width: 46ch; line-height: 1.5; }
+
+@media (max-width: 760px) {
+  .screen { grid-template-columns: minmax(0, 1fr); grid-template-areas: "title" "convo" "ask" "side" "fbar"; }
+  .log { flex: none; height: 52vh; }
+  .xray { order: -1; }                        /* on a phone the x-ray comes first */
+  .boot { align-items: start; }
+}
+@media (min-width: 520px) and (max-width: 760px) {
+  .side { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .tb-weights, .hint { display: none; }
+  body { font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo.go i, .bt-ready { animation: none !important; }
+}
+</style>
+
+<main class="screen" id="screen">
+  <header class="titlebar">
+    <span>◄► <b>TINY</b></span>
+    <span>· NEURAL INTERFACE 2.1 <span class="tb-weights">· 367,000 WEIGHTS</span></span>
+    <span class="tb-right"><span class="led">■</span> ONLINE <b id="clock">--:--</b></span>
+  </header>
+
+  <section class="panel convo" aria-label="Conversation">
+    <h2 class="label">CONVERSATION</h2>
+    <div class="log" id="log" aria-live="polite"></div>
+  </section>
+
+  <aside class="side">
+    <section class="panel quiet" aria-label="Neural monitor">
+      <h2 class="label">NEURAL MONITOR</h2>
+      <div class="mlabel">LAYER ACTIVITY</div>
+      <div id="layers"></div>
+      <div class="mlabel">CONFIDENCE</div>
+      <div class="crow"><div class="meter" id="conf"></div><span class="big" id="conf-pct">--%</span></div>
+      <div class="mlabel">LAST LETTERS</div>
+      <div class="heat" id="heat"></div>
+      <div class="duo">
+        <div><div class="mlabel">SPEED</div><div class="val" id="speed">0.0 letters/s</div></div>
+        <div><div class="mlabel">MODE</div><div class="val" id="mode">creativity 5</div></div>
+      </div>
+      <div class="mlabel">NETWORK</div>
+      <div class="val" id="net">loading…</div>
+    </section>
+
+    <section class="panel quiet xray" aria-label="Letter x-ray">
+      <h2 class="label">LETTER X-RAY</h2>
+      <div class="xr-ctx" id="xr-ctx"></div>
+      <ul class="xr-list" id="xr-list"></ul>
+      <p class="xr-why" id="xr-why"></p>
+      <p class="xr-note" id="xr-note">TINY writes one letter at a time. Ask a question, then point at any letter of the answer to see the other letters it weighed.</p>
+    </section>
+  </aside>
+
+  <form class="panel quiet ask" id="ask" autocomplete="off">
+    <h2 class="label">ASK TINY</h2>
+    <span class="prompt" aria-hidden="true">►</span>
+    <input id="q" maxlength="72" spellcheck="false" placeholder="what is the capital of peru" aria-label="Your question for TINY">
+    <span class="hint">↑ last · F1 help</span>
+  </form>
+
+  <nav class="fbar" aria-label="Settings">
+    <button type="button" id="b-help"><kbd>F1</kbd> Help</button>
+    <button type="button" id="b-sound"><kbd>F2</kbd> Sound <span class="on" id="v-sound">ON</span></button>
+    <button type="button" id="b-voice"><kbd>F3</kbd> Voice <span class="on" id="v-voice">ON</span></button>
+    <button type="button" id="b-creat"><kbd>F4</kbd> Creativity <span class="on" id="v-creat">5</span></button>
+    <span id="status"></span>
+  </nav>
+
+  <div class="boot" id="boot">
+    <canvas id="rain" aria-hidden="true"></canvas>
+    <div class="boot-in">
+      <div class="logo" id="logo" role="img" aria-label="TINY"></div>
+      <div class="bt-name">NEURAL INTERFACE</div>
+      <div class="bt-ver">version 2.1 · web port</div>
+      <div class="bt-rule"></div>
+      <div class="bt-load">LOADING NEURAL WEIGHTS FROM TINY.BIN</div>
+      <div class="bt-bar"><div class="bar36" id="bar36"></div><span id="bt-pct">0%</span></div>
+      <div class="bt-lines" id="bt-lines"></div>
+      <div class="bt-ready" id="bt-ready" hidden>► SYSTEM READY ◄</div>
+      <button type="button" class="bt-go" id="bt-go" hidden>press any key to begin</button>
+      <p class="bt-err" id="bt-err" hidden></p>
+    </div>
+  </div>
+</main>
+
+<footer class="credit">
+  TINY 2.1 is by <a href="https://github.com/WollyMonjac" target="_blank" rel="noopener">WollyMonjac</a>
+  (<a href="https://github.com/WollyMonjac/Tiny-2.1" target="_blank" rel="noopener">original repository</a>).
+  This page is a port: it runs the original network, TINY.BIN, inside your browser, and nothing you type leaves it.
+  <a href="https://github.com/matteonovelli/Tiny-2.1" target="_blank" rel="noopener">Mac and web port</a>.
+</footer>
+
+<script>
+"use strict";
+
+/* ==== the network: TINY.C's step(), pick() and think() in JavaScript ==== */
+
+const Net = (() => {
+  const VOCAB = 97, CTX = 128;          /* 0 pad, 1 end, 2.. the letters ' '..'~' */
+  let D, L, H, HD, HID, attDiv, emb, pos, layers, gf, total = 1;
+  let kc, vc, ks, vs, bx, bh, bq, bt, ba, bm, bs, score, draw, act;
+
+  /* TINY.BIN version 2: "TNY2", four 16-bit sizes, then tables stored row
+     by row as a 32-bit float scale and one signed byte per weight.
+     Yields after each table so the boot screen can show progress. */
+  function* load(buf) {
+    const dv = new DataView(buf);
+    let o = 4;
+    if (buf.byteLength < 12 || String.fromCharCode(...new Uint8Array(buf, 0, 4)) !== "TNY2")
+      throw new Error("TINY.BIN is not a version 2 network file.");
+    const r16 = () => { const v = dv.getUint16(o, true); o += 2; return v; };
+    D = r16(); L = r16(); H = r16(); HID = r16();
+    if (D < 8 || L < 1 || L > 32 || H < 1 || D % H || HID < 8)
+      throw new Error("TINY.BIN has a network size this page cannot handle.");
+    HD = D / H;
+    attDiv = Math.sqrt(HD);
+    total = 2 + 6 * L;
+    const need = n => { if (o + n > buf.byteLength) throw new Error("TINY.BIN is too short or damaged."); };
+    const table = (rows, cols) => {
+      const t = { rows, cols, scale: new Float32Array(rows), w: new Int8Array(rows * cols) };
+      need(rows * (4 + cols));
+      for (let r = 0; r < rows; r++) {
+        t.scale[r] = dv.getFloat32(o, true); o += 4;
+        t.w.set(new Int8Array(buf, o, cols), r * cols); o += cols;
+      }
+      return t;
+    };
+    const gains = () => {
+      need(4 * D);
+      const g = new Float32Array(D);
+      for (let i = 0; i < D; i++) { g[i] = dv.getFloat32(o, true); o += 4; }
+      return g;
+    };
+    let done = 0;
+    emb = table(VOCAB, D); yield ++done;
+    pos = table(CTX, D); yield ++done;
+    layers = [];
+    for (let l = 0; l < L; l++) {
+      const ly = { g1: gains() };
+      for (const k of ["wq", "wk", "wv", "wo"]) { ly[k] = table(D, D); yield ++done; }
+      ly.g2 = gains();
+      ly.f1 = table(HID, D); yield ++done;
+      ly.f2 = table(D, HID); yield ++done;
+      layers.push(ly);
+    }
+    gf = gains();
+    if (o !== buf.byteLength) throw new Error("TINY.BIN has the wrong size.");
+    kc = []; vc = []; ks = []; vs = [];
+    for (let l = 0; l < L; l++) {
+      kc.push(new Int8Array(CTX * D)); vc.push(new Int8Array(CTX * D));
+      ks.push(new Float32Array(CTX)); vs.push(new Float32Array(CTX));
+    }
+    bx = new Float32Array(D); bh = new Float32Array(D); bq = new Float32Array(D);
+    bt = new Float32Array(D); ba = new Float32Array(D); bm = new Float32Array(HID);
+    bs = new Float32Array(CTX); score = new Float32Array(VOCAB); draw = new Float32Array(VOCAB);
+    act = new Float32Array(L);
+  }
+
+  /* y = table * x */
+  function matvec(t, x, y) {
+    const { rows, cols, w, scale } = t;
+    for (let r = 0, o = 0; r < rows; r++, o += cols) {
+      let s = 0;
+      for (let c = 0; c < cols; c++) s += w[o + c] * x[c];
+      y[r] = s * scale[r];
+    }
+  }
+
+  /* y = x scaled to a standard size, times the gains g */
+  function norm(x, g, y) {
+    let s = 0;
+    for (let i = 0; i < D; i++) s += x[i] * x[i];
+    s = 1 / Math.sqrt(s / D + 1e-5);
+    for (let i = 0; i < D; i++) y[i] = x[i] * s * g[i];
+  }
+
+  const safeExp = x => (x < -60 ? 0 : Math.exp(x));
+
+  /* keep a list of D numbers as bytes, returning the scale */
+  function store(dst, off, src) {
+    let big = 0;
+    for (let i = 0; i < D; i++) { const v = Math.abs(src[i]); if (v > big) big = v; }
+    if (big < 1e-20) big = 1e-20;
+    const k = 127 / big;
+    for (let i = 0; i < D; i++) { const v = src[i] * k; dst[off + i] = Math.trunc(v < 0 ? v - 0.5 : v + 0.5); }
+    return big / 127;
+  }
+
+  /* feed letter `tok` at position `p`; fills score[] for the next letter */
+  function step(tok, p) {
+    const e = tok * D, q = p * D, es = emb.scale[tok], ps = pos.scale[p];
+    for (let i = 0; i < D; i++) bx[i] = emb.w[e + i] * es + pos.w[q + i] * ps;
+    for (let l = 0; l < L; l++) {
+      const ly = layers[l], K = kc[l], V = vc[l];
+      norm(bx, ly.g1, bh);                      /* look back at the earlier letters */
+      matvec(ly.wk, bh, bt); ks[l][p] = store(K, p * D, bt);
+      matvec(ly.wv, bh, bt); vs[l][p] = store(V, p * D, bt);
+      matvec(ly.wq, bh, bq);
+      for (let h = 0; h < H; h++) {
+        const hq = h * HD;
+        let big = -1e30;
+        for (let j = 0; j <= p; j++) {
+          const kp = j * D + hq;
+          let s = 0;
+          for (let i = 0; i < HD; i++) s += bq[hq + i] * K[kp + i];
+          s = s * ks[l][j] / attDiv;
+          bs[j] = s;
+          if (s > big) big = s;
+        }
+        let sum = 0;
+        for (let j = 0; j <= p; j++) { bs[j] = safeExp(bs[j] - big); sum += bs[j]; }
+        for (let i = 0; i < HD; i++) ba[hq + i] = 0;
+        for (let j = 0; j <= p; j++) {
+          if (bs[j] === 0) continue;
+          const vp = j * D + hq, s = bs[j] * vs[l][j] / sum;
+          for (let i = 0; i < HD; i++) ba[hq + i] += s * V[vp + i];
+        }
+      }
+      matvec(ly.wo, ba, bt);
+      for (let i = 0; i < D; i++) bx[i] += bt[i];
+      norm(bx, ly.g2, bh);                      /* think about it */
+      matvec(ly.f1, bh, bm);
+      let s = 0;
+      for (let i = 0; i < HID; i++) { if (bm[i] < 0) bm[i] = 0; else s += bm[i]; }
+      act[l] = s / HID;
+      matvec(ly.f2, bm, bt);
+      for (let i = 0; i < D; i++) bx[i] += bt[i];
+    }
+    norm(bx, gf, bh);
+    matvec(emb, bh, score);
+  }
+
+  /* Pick the next letter as TINY.C does: the best one at creativity 0,
+     otherwise at random among the letters that fit nearly as well.
+     Also returns the top five candidates for the x-ray. */
+  function pick(creativity) {
+    let best = 0;
+    for (let i = 1; i < VOCAB; i++) if (score[i] > score[best]) best = i;
+    let tok = best;
+    if (creativity > 0) {
+      const t = creativity / 5;
+      let sum = 0;
+      for (let i = 0; i < VOCAB; i++) {
+        draw[i] = safeExp((score[i] - score[best]) / t);
+        if (draw[i] < 0.15) draw[i] = 0;          /* never pick unlikely letters */
+        sum += draw[i];
+      }
+      let r = sum * Math.floor(Math.random() * 10000) / 10000;
+      for (let i = 0; i < VOCAB; i++) {
+        r -= draw[i];
+        if (r < 0 && draw[i] > 0) { tok = i; break; }
+      }
+    }
+    let z = 0;
+    for (let i = 0; i < VOCAB; i++) z += safeExp(score[i] - score[best]);
+    const order = Array.from(score.keys()).sort((a, b) => score[b] - score[a]).slice(0, 5);
+    const top = order.map(i => ({
+      tok: i,
+      p: safeExp(score[i] - score[best]) / z,
+      inDraw: creativity > 0 ? draw[i] > 0 : i === best
+    }));
+    return { tok, conf: safeExp(score[tok] - score[best]) / z, top };
+  }
+
+  /* Answer question q, one event per letter read or written. */
+  function* think(q, creativity) {
+    let p = 0;
+    for (; p < q.length; p++) {
+      step(q.charCodeAt(p) - 30, p);
+      yield { kind: "read", i: p, n: q.length, act: act.slice() };
+    }
+    step(1, p++);                               /* end of the question */
+    for (; p < CTX; p++) {
+      const r = pick(creativity);
+      if (r.tok <= 1) return;                   /* end of the answer */
+      yield { kind: "letter", ch: String.fromCharCode(r.tok + 30), ...r, act: act.slice() };
+      step(r.tok, p);
+    }
+  }
+
+  function answer(q, creativity = 0) {
+    let s = "";
+    for (const e of think(q, creativity)) if (e.kind === "letter") s += e.ch;
+    return s;
+  }
+
+  return { load, think, answer, get info() { return { D, L, H, HID, total }; } };
+})();
+
+/* TINY.C's clean(): printable letters only, no trailing spaces, CAPS LOCK
+   text in lower case. Accents are dropped first (TINY knows plain ASCII). */
+function clean(line) {
+  let q = line.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  q = Array.from(q).filter(c => c >= " " && c <= "~").join("").slice(0, 72).replace(/ +$/, "");
+  if (/[A-Z]/.test(q) && !/[a-z]/.test(q)) q = q.toLowerCase();
+  return q;
+}
+
+/* ==== settings ==== */
+
+const opt = { sound: true, voice: true, creativity: 5 };
+try { Object.assign(opt, JSON.parse(localStorage.getItem("tiny-opt") || "{}")); } catch (e) { /* defaults */ }
+function saveOpt() { try { localStorage.setItem("tiny-opt", JSON.stringify(opt)); } catch (e) { /* not kept */ } }
+
+/* ==== the PC speaker, as a square wave in Web Audio ==== */
+
+const Spk = (() => {
+  const VOL = 0.045;
+  let ac = null, osc, amp, t = 0;
+
+  function init() {
+    if (ac) { if (ac.state === "suspended") ac.resume(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try {
+      ac = new AC();
+      osc = ac.createOscillator(); osc.type = "square";
+      const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 5500;
+      amp = ac.createGain(); amp.gain.value = 0;
+      osc.connect(lp).connect(amp).connect(ac.destination);
+      osc.start();
+    } catch (e) { ac = null; }
+  }
+  const live = () => ac !== null && opt.sound;
+  const on = (hz, at) => { osc.frequency.setValueAtTime(hz, at); amp.gain.setValueAtTime(VOL, at); };
+  const off = at => amp.gain.setValueAtTime(0, at);
+  const start = () => Math.max(ac.currentTime + 0.01, t);
+
+  /* notes as [hz, ms]; 0 Hz is silence */
+  function play(notes) {
+    if (!live()) return;
+    let at = start();
+    for (const [hz, ms] of notes) { if (hz) on(hz, at); else off(at); at += ms / 1000; }
+    off(at);
+    t = at;
+  }
+  const sweep = (from, to, ms) => {
+    const n = [];
+    for (let u = 0; u < ms; u += 3) n.push([from + (to - from) * u / ms, 3]);
+    play(n);
+  };
+
+  /* the robot voice (TINY.C, say_letter): vowels buzz between two
+     formant-like pitches, s/f/h hiss, p/t/k click, m/n hum */
+  function buzz(f1, f2, ms, sh, at) {
+    f1 = Math.floor(f1 * sh); f2 = Math.floor(f2 * sh);
+    for (let u = 0; u < ms; u += 4) { on(f1, at); at += 0.002; on(f2, at); at += 0.002; }
+    off(at);
+    return at;
+  }
+  function hiss(ms, at) {
+    for (let u = 0; u < ms; u++) { on(2500 + Math.floor(Math.random() * 4500), at); at += 0.001; }
+    off(at);
+    return at;
+  }
+  function tone(hz, ms, at) { on(hz, at); at += ms / 1000; off(at); return at; }
+  const quiet = (ms, at) => at + ms / 1000;
+
+  function say(c, sh, at) {
+    c = c.toLowerCase();
+    switch (c) {
+      case "a": return buzz(730, 1090, 64, sh, at);
+      case "e": return buzz(530, 1840, 56, sh, at);
+      case "i": case "y": return buzz(300, 2290, 52, sh, at);
+      case "o": return buzz(570, 840, 64, sh, at);
+      case "u": return buzz(320, 870, 56, sh, at);
+      case "s": case "z": case "c": case "x": return hiss(46, at);
+      case "f": case "h": case "v": case "j": return hiss(30, at);
+      case "p": case "t": case "k": case "q": return quiet(18, tone(3200, 2, at));
+      case "b": case "d": case "g": return quiet(10, buzz(180, 260, 12, sh, at));
+      case "m": case "n": return buzz(210, 300, 40, sh, at);
+      case "l": case "r": case "w": return buzz(400, 1100, 36, sh, at);
+      case " ": return quiet(45, at);
+      case ",": case "-": return quiet(110, at);
+      case ".": case "!": case "?": case ":": return quiet(200, at);
+      default:
+        if (c >= "0" && c <= "9") { const d = c.charCodeAt(0) - 48; return buzz(420 + d * 60, 900 + d * 90, 70, sh, at); }
+        return quiet(20, at);
+    }
+  }
+
+  /* Schedule the whole answer. Returns each word's start and end, in
+     milliseconds from now, so the page can light it up. */
+  function voice(text) {
+    if (!live()) return null;
+    const n = text.length, words = [], base = start(), now = ac.currentTime;
+    let at = base, i = 0;
+    on(1200, at); at += 0.008; off(at);         /* the "about to speak" blip */
+    while (i < n) {
+      let j = i;
+      while (j < n && text[j] !== " ") j++;
+      const wordEnd = j;
+      while (j < n && text[j] === " ") j++;
+      const sh = (115 - Math.floor(30 * i / (n + 1))) / 100;   /* the pitch falls */
+      const from = at;
+      for (let k = i; k < j; k++) at = say(text[k], sh, at);
+      words.push({ i, j: wordEnd, from: (from - now) * 1000, to: (at - now) * 1000 });
+      i = j;
+    }
+    t = at;
+    return { words, end: (at - now) * 1000 };
+  }
+
+  function stop() {
+    if (!ac) return;
+    const now = ac.currentTime;
+    amp.gain.cancelScheduledValues(now);
+    osc.frequency.cancelScheduledValues(now);
+    amp.gain.setValueAtTime(0, now);
+    t = now;
+  }
+
+  return {
+    init, stop, voice, sweep,
+    click: () => play([[1800, 2]]),
+    tick: hz => play([[hz, 3]]),
+    blip: hz => play([[hz, 6]]),
+    error: () => play([[140, 120]]),
+    ready: () => play([[1319, 40], [1760, 70]]),
+    boot: () => play([[392, 55], [523, 55], [659, 55], [784, 55], [1047, 55], [1319, 55], [1568, 140]])
+  };
+})();
+
+/* ==== page ==== */
+
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const rnd = n => Math.floor(Math.random() * n);
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const C = { mint: "var(--mint)", cyan: "var(--cyan)", amber: "var(--amber)", rose: "var(--rose)" };
+
+const SAMPLES = [
+  "what is the capital of peru", "is a whale a fish", "what is 7 times 8",
+  "which countries border estonia", "spell elephant", "what is the symbol for gold",
+  "how do you say thank you in spanish", "what is a group of lions called",
+  "what comes after 199", "who invented the telephone", "what is 14 in roman numerals",
+  "how many moons does mars have", "what is the fastest land animal", "tell me a joke",
+  "plural of mouse", "which is bigger, 405 or 450", "what is dos"
+];
+
+const log = $("log"), input = $("q");
+let turns = [], selected = null, busy = false, speaking = null, lastQ = "";
+let actMax = [], heat = [], speed = 0;
+
+/* ---- the neural monitor ---- */
+
+function cells(el, n) { el.replaceChildren(...Array.from({ length: n }, () => document.createElement("i"))); }
+const confColor = v => (v > 800 ? C.mint : v > 500 ? C.amber : C.rose);
+
+function meter(el, v, color) {                  /* v from 0 to 1000 */
+  const c = el.children, w = c.length, n = Math.floor(v * w * 2 / 1000);
+  for (let i = 0; i < w; i++) {
+    c[i].className = n >= 2 * i + 2 ? "f" : n === 2 * i + 1 ? "h" : "";
+    c[i].style.setProperty("--m", color);
+  }
+}
+
+function monitorStatic() {
+  const { L, D } = Net.info, box = $("layers");
+  box.replaceChildren();
+  for (let l = 0; l < L; l++) {
+    const row = document.createElement("div"), m = document.createElement("div");
+    row.className = "lrow";
+    row.textContent = "L" + (l + 1);
+    m.className = "meter";
+    cells(m, 15);
+    row.append(m);
+    box.append(row);
+  }
+  cells($("conf"), 13);
+  cells($("heat"), 18);
+  actMax = new Array(L).fill(0);
+  $("net").textContent = `${L} layers · ${D} wide`;
+}
+
+function monitorLayers(act) {
+  const rows = $("layers").children;
+  for (let l = 0; l < act.length; l++) {
+    if (act[l] > actMax[l]) actMax[l] = act[l];
+    const v = actMax[l] > 0 ? Math.round(1000 * act[l] / actMax[l]) : 0;
+    meter(rows[l].lastChild, v, l % 2 ? C.cyan : C.mint);
+    actMax[l] *= 0.995;
+  }
+}
+
+function monitorLetter(conf) {
+  const v = Math.round(conf * 1000);
+  meter($("conf"), v, confColor(v));
+  $("conf-pct").textContent = Math.floor(v / 10) + "%";
+  heat.push(v);
+  if (heat.length > 18) heat.shift();
+  drawHeat();
+}
+
+function drawHeat() {
+  const c = $("heat").children;
+  for (let i = 0; i < 18; i++) {
+    const v = heat[i];
+    c[i].className = v === undefined ? "" : "f";
+    if (v !== undefined) {
+      c[i].style.setProperty("--m", confColor(v));
+      c[i].style.setProperty("--o", v > 900 ? 1 : v > 700 ? 0.8 : v > 450 ? 0.6 : 0.4);
+    }
+  }
+}
+
+function bar() {
+  $("v-sound").textContent = opt.sound ? "ON" : "OFF";
+  $("v-voice").textContent = opt.voice ? "ON" : "OFF";
+  $("v-creat").textContent = opt.creativity;
+  $("mode").textContent = "creativity " + opt.creativity;
+  $("speed").textContent = speed.toFixed(1) + " letters/s";
+}
+const status = s => { $("status").textContent = s; };
+
+/* ---- the letter x-ray ---- */
+
+const tokLabel = t => (t === 0 ? "∅" : t === 1 ? "⏎" : t === 2 ? "␣" : String.fromCharCode(t + 30));
+
+function xray(turn, idx, why) {
+  const e = turn.info[idx];
+  if (!e) return;
+  if (selected) selected.classList.remove("sel");
+  selected = turn.ans.children[idx];
+  if (!busy) selected.classList.add("sel");
+
+  const ctx = $("xr-ctx"), mark = document.createElement("mark");
+  mark.textContent = e.ch === " " ? "␣" : e.ch;
+  ctx.replaceChildren(document.createTextNode(turn.text.slice(Math.max(0, idx - 20), idx)), mark);
+
+  $("xr-list").replaceChildren(...e.top.map(c => {
+    const li = document.createElement("li");
+    li.className = (c.tok === e.tok ? "pick " : "") + (c.inDraw ? "in" : "");
+    const pct = c.p >= 0.995 ? "100%" : c.p < 0.01 ? "<1%" : Math.round(c.p * 100) + "%";
+    li.innerHTML = `<span class="mk">${c.tok === e.tok ? "►" : ""}</span><span class="k"></span>` +
+      `<span class="bar"><i style="width:${Math.max(1, c.p * 100).toFixed(1)}%"></i></span><span class="p">${pct}</span>`;
+    li.querySelector(".k").textContent = tokLabel(c.tok);
+    li.title = c.tok === 1 ? "end the answer here" : c.tok === 2 ? "a space" : "";
+    return li;
+  }));
+
+  $("xr-why").textContent = why;
+  $("xr-note").textContent = turn.creativity === 0
+    ? "Creativity 0: TINY always writes its top letter."
+    : `Creativity ${turn.creativity}: TINY drew this letter at random from the bright ones, the letters that fit nearly as well as the top one.`;
+}
+
+/* ---- the conversation ---- */
+
+function scrollDown() { log.scrollTop = log.scrollHeight; }
+
+function sysLines(lines, chips) {
+  const box = document.createElement("div");
+  box.className = "sys";
+  for (const l of lines) { const d = document.createElement("div"); d.textContent = l; box.append(d); }
+  if (chips) box.append(chipRow(chips));
+  log.append(box);
+  scrollDown();
+}
+
+function chipRow(list) {
+  const row = document.createElement("div");
+  row.className = "chips";
+  for (const q of list) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.textContent = q;
+    b.addEventListener("click", () => { if (!busy) { stopVoice(); ask(q); } });
+    row.append(b);
+  }
+  return row;
+}
+
+function greet() {
+  const pool = SAMPLES.slice(), pick3 = [];
+  while (pick3.length < 3) pick3.push(pool.splice(rnd(pool.length), 1)[0]);
+  sysLines(["Hello! I am TINY, a neural network in your computer.",
+            "Ask about countries, animals, space, words or sums. Try:"], pick3);
+}
+
+function help() {
+  const box = document.createElement("div"), head = document.createElement("span");
+  const add = (text, gap) => {
+    const d = document.createElement("div");
+    d.textContent = text;
+    if (gap) d.style.marginTop = "8px";
+    box.append(d);
+  };
+  box.className = "helpbox";
+  head.className = "head";
+  head.textContent = "HELP";
+  box.append(head);
+  add("Ask a question and press Enter. Some to try:");
+  box.append(chipRow(["capital of peru", "is a whale a fish", "what is 7 times 8", "spell elephant",
+                      "which countries border estonia", "how do you say thank you in spanish"]));
+  add("Outside its 3,500 facts it makes things up, confidently:", true);
+  box.append(chipRow(["who is the king of france", "what is 17 times 23"]));
+  add("Letters TINY was less than 50% sure of are underlined in red. Point at any letter of an answer to see what else it weighed.", true);
+  add("F2 sound · F3 robot voice · F4 creativity 0-9", true);
+  add("↑ last question · any key stops the voice · CLS clears");
+  log.append(box);
+  scrollDown();
+}
+
+function addTurn(q) {
+  const t = document.createElement("div");
+  t.innerHTML = '<div class="line you"><span class="who"> YOU »</span><span class="txt"></span></div>' +
+                '<div class="line tiny"><span class="who">TINY »</span><span class="ans"></span><span class="scan"></span></div>';
+  t.querySelector(".txt").textContent = q;
+  log.append(t);
+  const turn = { ans: t.querySelector(".ans"), scan: t.querySelector(".scan"), text: "", info: [], creativity: opt.creativity };
+  turns.push(turn);
+  const index = turns.length - 1;
+  turn.ans.addEventListener("pointerover", ev => {
+    const i = Array.prototype.indexOf.call(turn.ans.children, ev.target);
+    if (i >= 0 && !busy) xray(turns[index], i, `Letter ${i + 1} of this answer, ${Math.round(turn.info[i].conf * 100)}% sure.`);
+  });
+  scrollDown();
+  return turn;
+}
+
+/* a scanner sweeps back and forth while TINY reads the question */
+let spin = 0;
+function scanner(turn, i, n) {
+  let head = spin++ % 18;
+  if (head >= 9) head = 17 - head;
+  let html = "";
+  for (let k = 0; k < 10; k++) {
+    const d = Math.abs(head - k);
+    html += d === 0 ? '<span class="h">█</span>' : d === 1 ? '<span class="n1">▓</span>' : d === 2 ? '<span class="n2">▒</span>' : "·";
+  }
+  turn.scan.innerHTML = html + ` reading ${Math.floor(100 * (i + 1) / n)}%`;
+}
+
+async function ask(q) {
+  busy = true;
+  input.disabled = true;
+  heat = [];
+  drawHeat();
+  if (selected) selected.classList.remove("sel");
+  const turn = addTurn(q);
+  status("thinking…");
+  const t0 = performance.now();
+  let prev = null;
+
+  for (const ev of Net.think(q, turn.creativity)) {
+    monitorLayers(ev.act);
+    if (ev.kind === "read") {
+      scanner(turn, ev.i, ev.n);
+      if (ev.i % 3 === 0) Spk.tick(2400 + rnd(8) * 150);
+      await sleep(reduced ? 4 : 14);
+      continue;
+    }
+    if (prev) prev.className = prev.dataset.guess ? "guess" : "";
+    turn.scan.textContent = "";
+    const s = document.createElement("span");
+    turn.ans.append(s);
+    if (ev.ch !== " " && !reduced) {           /* decode flicker */
+      s.textContent = String.fromCharCode(33 + rnd(90));
+      s.className = "flick";
+      await sleep(14);
+    }
+    s.textContent = ev.ch;
+    s.className = "glow";
+    if (ev.conf <= 0.5) s.dataset.guess = "1";
+    turn.text += ev.ch;
+    turn.info.push(ev);
+    monitorLetter(ev.conf);
+    xray(turn, turn.info.length - 1, "The letter TINY just wrote.");
+    if (!opt.voice) Spk.blip(900 + (ev.ch.charCodeAt(0) % 16) * 70);
+    scrollDown();
+    prev = s;
+    await sleep(reduced ? 8 : 26);
+  }
+  if (prev) prev.className = prev.dataset.guess ? "guess" : "";
+  turn.scan.textContent = "";
+  if (!turn.info.length) turn.ans.textContent = ".";
+
+  const secs = (performance.now() - t0) / 1000;
+  speed = turn.info.length / secs;
+  status(`${turn.info.length} ltr ${secs.toFixed(1)}s`);
+  bar();
+  busy = false;
+  input.disabled = false;
+  input.focus();
+
+  if (turn.info.length) {                       /* show where it was least sure */
+    let low = 0;
+    turn.info.forEach((e, i) => { if (e.conf < turn.info[low].conf) low = i; });
+    xray(turn, low, `Least sure letter of this answer: ${Math.round(turn.info[low].conf * 100)}%.`);
+  }
+  if (opt.sound && opt.voice) speak(turn); else Spk.ready();
+}
+
+function speak(turn) {
+  const plan = Spk.voice(turn.text);
+  if (!plan) return;
+  const timers = [];
+  const paint = (w, cls) => {
+    for (let k = w.i; k < w.j; k++) {
+      const s = turn.ans.children[k];
+      if (s) s.className = cls || (s.dataset.guess ? "guess" : "") + (s === selected ? " sel" : "");
+    }
+  };
+  for (const w of plan.words) {
+    timers.push(setTimeout(() => paint(w, "speak"), Math.max(0, w.from)));
+    timers.push(setTimeout(() => paint(w), w.to));
+  }
+  speaking = { stop() { timers.forEach(clearTimeout); plan.words.forEach(w => paint(w)); } };
+  timers.push(setTimeout(() => { speaking = null; }, plan.end));
+}
+
+function stopVoice() {
+  if (!speaking) return;
+  speaking.stop();
+  speaking = null;
+  Spk.stop();
+}
+
+function submit(line) {
+  const q = clean(line);
+  if (!q) return;
+  const w = q.toLowerCase();
+  if (w === "quit" || w === "exit") return quit();
+  if (w === "cls") { log.replaceChildren(); turns = []; selected = null; return; }
+  if (w === "help") return help();
+  lastQ = q;
+  ask(q);
+}
+
+function quit() {
+  status("goodbye");
+  Spk.sweep(1600, 200, 360);
+  log.replaceChildren();
+  turns = []; selected = null;
+  $("boot").hidden = false;
+  booting = false;
+}
+
+/* ---- boot ---- */
+
+const LOGO = ["#####  ###  #   #  #   #", "  #     #   ##  #   # # ", "  #     #   # # #    #  ",
+              "  #     #   #  ##    #  ", "  #    ###  #   #    #  "];
+const LOGO_COL = ["var(--cyan)", "var(--cyan)", "var(--blue)", "var(--pink)", "var(--pink)"];
+let booting = true, ready = false, skip = false;
+
+function buildLogo() {
+  const el = $("logo");
+  for (let y = 0; y < 6; y++)
+    for (let x = 0; x < 25; x++) {
+      const i = document.createElement("i");
+      if (LOGO[y] && LOGO[y][x] === "#") {
+        i.className = "on";
+        i.style.setProperty("--c", LOGO_COL[y]);
+        i.style.setProperty("--d", (Math.random() * 0.7).toFixed(2) + "s");
+        i.style.setProperty("--s", (0.9 + x * 0.03).toFixed(2) + "s");
+      } else if (y > 0 && x > 0 && LOGO[y - 1][x - 1] === "#") {
+        i.className = "sh";
+        i.style.setProperty("--d", (Math.random() * 0.7).toFixed(2) + "s");
+      }
+      el.append(i);
+    }
+}
+
+/* falling green letters, like a film computer */
+function rain(canvas, ms) {
+  return new Promise(done => {
+    const g = canvas.getContext("2d"), dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight, fs = 16, step = fs * 1.25;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    g.scale(dpr, dpr);
+    g.font = `${fs}px ${getComputedStyle(document.body).fontFamily}`;
+    const cols = Math.ceil(w / step), y = [], sp = [];
+    for (let i = 0; i < cols; i++) { y.push(-rnd(25)); sp.push(0.35 + Math.random() * 0.5); }
+    const t0 = performance.now();
+    let over = false;
+    const finish = () => { if (!over) { over = true; done(); } };
+    setTimeout(finish, ms + 100);              /* also ends where frames do not run */
+    (function frame(now) {
+      if (over) return;
+      g.fillStyle = "rgba(4, 4, 28, 0.2)";
+      g.fillRect(0, 0, w, h);
+      for (let i = 0; i < cols; i++) {
+        const yy = y[i] * fs;
+        g.fillStyle = "#49ffaa";
+        g.fillText(String.fromCharCode(33 + rnd(90)), i * step, yy - fs);
+        g.fillStyle = "#f3fbff";
+        g.fillText(String.fromCharCode(33 + rnd(90)), i * step, yy);
+        y[i] += sp[i];
+        if (yy > h + fs * 8) y[i] = -rnd(10);
+      }
+      if (now - t0 < ms && !skip) requestAnimationFrame(frame); else finish();
+    })(t0);
+  });
+}
+
+function bootBar(done, total) {
+  const c = $("bar36").children, n = Math.floor(36 * done / total);
+  for (let i = 0; i < 36; i++) c[i].className = i < n ? (i * 3 < n ? "a" : "b") : "";
+  $("bt-pct").textContent = Math.floor(100 * done / total) + "%";
+  if (done === 2 || (done > 2 && (done - 2) % 6 === 0)) {
+    const d = document.createElement("div");
+    d.innerHTML = '<span><span class="p">►</span> </span><span class="fill"></span><span class="ok">ONLINE</span>';
+    d.firstChild.append(done === 2 ? "letters + places" : `layer ${(done - 2) / 6} of ${Net.info.L}`);
+    $("bt-lines").append(d);
+  }
+}
+
+async function fetchBin() {
+  const inline = document.getElementById("tiny-bin");   /* a copy of TINY.BIN in the page, base64 */
+  if (inline) {
+    const s = atob(inline.textContent.trim()), a = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
+    return a.buffer;
+  }
+  let err;
+  for (const url of ["TINY.BIN", "../TINY.BIN"]) {
+    try {
+      const r = await fetch(url);
+      if (r.ok) return await r.arrayBuffer();
+      err = new Error(`${url} answered ${r.status}.`);
+    } catch (e) { err = e; }
+  }
+  throw err;
+}
+
+function bootError(e) {
+  const p = $("bt-err");
+  p.hidden = false;
+  p.textContent = location.protocol === "file:"
+    ? "This page loads TINY.BIN with fetch, which browsers block for files opened from disk. In this folder run: python3 -m http.server, then open http://localhost:8000"
+    : "Could not load the network: " + (e && e.message ? e.message : e);
+}
+
+async function boot() {
+  buildLogo();
+  cells($("bar36"), 36);
+  const bin = fetchBin();
+  bin.catch(() => {});
+  if (!reduced) {
+    await rain($("rain"), 1300);
+    $("rain").classList.add("gone");
+  } else {
+    $("rain").hidden = true;
+  }
+  $("logo").classList.add("go");
+  let buf;
+  try { buf = await bin; } catch (e) { bootError(e); return; }
+  try {
+    const gen = Net.load(buf);
+    for (let r = gen.next(); !r.done; r = gen.next()) {
+      bootBar(r.value, Net.info.total);
+      if (!reduced && !skip) await sleep(30);
+    }
+  } catch (e) { bootError(e); return; }
+  monitorStatic();
+  $("bt-ready").hidden = false;
+  $("bt-go").hidden = false;
+  ready = true;
+}
+
+function begin() {
+  if (!ready) { skip = true; return; }
+  if (!booting && $("boot").hidden) return;
+  Spk.init();
+  $("boot").hidden = true;
+  booting = false;
+  status("");
+  greet();
+  Spk.boot();
+  Spk.ready();
+  input.focus();
+}
+
+/* ---- keys ---- */
+
+document.addEventListener("keydown", e => {
+  if (!$("boot").hidden) {
+    if (["Tab", "Shift", "Meta", "Control", "Alt"].includes(e.key)) return;
+    e.preventDefault();
+    begin();
+    return;
+  }
+  if (speaking && !["F2", "F3", "F4", "Shift"].includes(e.key)) stopVoice();   /* any key stops the voice */
+  switch (e.key) {
+    case "F1": e.preventDefault(); help(); break;
+    case "F2": e.preventDefault(); toggle("sound"); break;
+    case "F3": e.preventDefault(); toggle("voice"); break;
+    case "F4": e.preventDefault(); creativity(); break;
+  }
+});
+
+input.addEventListener("keydown", e => {
+  if (e.key === "ArrowUp" && lastQ) { e.preventDefault(); input.value = lastQ; }
+  else if (e.key === "Escape") input.value = "";
+});
+input.addEventListener("input", () => Spk.click());
+
+$("ask").addEventListener("submit", e => {
+  e.preventDefault();
+  if (busy) return;
+  const v = input.value;
+  input.value = "";
+  submit(v);
+});
+
+function toggle(k) { opt[k] = !opt[k]; if (!opt.sound) Spk.stop(); saveOpt(); bar(); Spk.click(); }
+function creativity() { opt.creativity = (opt.creativity + 1) % 10; saveOpt(); bar(); Spk.click(); }
+
+$("b-help").addEventListener("click", () => help());
+$("b-sound").addEventListener("click", () => toggle("sound"));
+$("b-voice").addEventListener("click", () => toggle("voice"));
+$("b-creat").addEventListener("click", () => creativity());
+$("boot").addEventListener("click", () => begin());
+
+function clock() {
+  const d = new Date();
+  $("clock").textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+clock();
+setInterval(clock, 15000);
+bar();
+boot();
+
+/* for the curious, from the browser console: tiny.answer("what is dos") */
+window.tiny = { answer: (q, creativity = 0) => Net.answer(clean(q), creativity) };
+</script>
